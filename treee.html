@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 梦幻雪松 - 宝石与仙子尘埃版</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #020406; font-family: 'Segoe UI', sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        #video-container {
+            position: absolute; bottom: 20px; left: 20px;
+            width: 160px; height: 120px; z-index: 10;
+            border-radius: 10px; overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            background: #000; transform: scaleX(-1);
+        }
+        video { width: 100%; height: 100%; object-fit: cover; }
+
+        #loading {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #e0f7fa; font-size: 24px; z-index: 20;
+            pointer-events: none; text-align: center;
+            text-shadow: 0 0 15px rgba(100,255,218,0.6);
+            font-weight: 300; letter-spacing: 2px;
+        }
+
+        #fs-btn {
+            position: absolute; bottom: 20px; right: 20px; z-index: 10;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2);
+            color: #e0f7fa; padding: 8px 16px; border-radius: 20px;
+            cursor: pointer; backdrop-filter: blur(5px);
+            transition: all 0.3s;
+        }
+        #fs-btn:hover { background: rgba(255,255,255,0.2); box-shadow: 0 0 15px rgba(255,255,255,0.1); }
+    </style>
+    
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div id="loading">正在凝聚仙子尘埃...<br><span style="font-size:14px; opacity:0.6">唤醒魔法雪松</span></div>
+    <div id="video-container"><video id="input_video"></video></div>
+    <div id="canvas-container"></div>
+    <button id="fs-btn">⛶ 沉浸模式</button>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import GUI from 'lil-gui';
+
+        // --- 1. 场景基础 ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        // 修改：雾气改为深邃的午夜蓝黑色
+        scene.fog = new THREE.FogExp2(0x020406, 0.002);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 5, 38);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.4; // 稍微调慢，更优雅
+
+        // --- 2. 纹理生成器 (关键修改：适应新风格) ---
+        function createTexture(type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const cx = 32, cy = 32;
+            
+            ctx.clearRect(0,0,64,64);
+
+            if (type === 'hexagram') { 
+                // [新] 六芒星：两个反向三角形
+                ctx.fillStyle = '#ffffff'; 
+                ctx.shadowBlur = 4; ctx.shadowColor = 'white';
+                
+                const drawTri = (yOff, scale) => {
+                    ctx.beginPath();
+                    for(let i=0; i<3; i++) {
+                        const a = (i * 120 + 90) * Math.PI/180;
+                        ctx.lineTo(cx + Math.cos(a)*18*scale, cy + yOff + Math.sin(a)*18*scale);
+                    }
+                    ctx.closePath(); ctx.fill();
+                };
+                ctx.save();
+                drawTri(-2, 1); // 正三角
+                ctx.translate(cx, cy); ctx.rotate(Math.PI); ctx.translate(-cx, -cy);
+                drawTri(-2, 1); // 倒三角
+                ctx.restore();
+
+            } else if (type === 'diamond') {
+                // [新] 宝石切割：菱形 + 十字光芒
+                const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 32);
+                g.addColorStop(0, '#ffffff'); g.addColorStop(0.4, 'rgba(255,255,255,0.5)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.fillStyle = g; ctx.fillRect(0,0,64,64); // 光晕
+                
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.moveTo(cx, 4); ctx.lineTo(60, cy); ctx.lineTo(cx, 60); ctx.lineTo(4, cy); ctx.fill(); // 菱形主体
+                
+            } else if (type === 'pearl') {
+                // [新] 珍珠：柔和的径向渐变，带有一个锐利的高光点
+                const g = ctx.createRadialGradient(cx-6, cy-6, 1, cx, cy, 28);
+                g.addColorStop(0, '#ffffff');  // 锐利高光
+                g.addColorStop(0.1, '#fff0f0'); 
+                g.addColorStop(0.5, '#eee');
+                g.addColorStop(0.9, '#aaa');   // 阴影
+                g.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 28, 0, Math.PI*2); ctx.fill();
+
+            } else if (type === 'dust') {
+                // [新] 仙子尘埃：微小的发光点
+                const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 32);
+                g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.fillStyle = g; ctx.fillRect(0,0,64,64);
+            }
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const textures = {
+            'hexagram': createTexture('hexagram'),
+            'diamond': createTexture('diamond'),
+            'pearl': createTexture('pearl'),
+            'dust': createTexture('dust')
+        };
+
+        // --- 3. 核心 Shader (修改：适应宝石闪烁和珍珠质感) ---
+        const commonVertexShader = `
+            uniform float uTime;
+            uniform float uScale;
+            uniform float uSpread;
+            uniform float uSize;
+            attribute float aRandom;
+            varying float vAlpha;
+            varying vec3 vColor;
+            
+            uniform bool isLight;   // 现对应：六芒星
+            uniform bool isBauble;  // 现对应：宝石
+            uniform bool isRibbon;  // 现对应：珍珠项链
+
+            uniform vec3 uDecorColor;
+
+            void main() {
+                vec3 pos = position;
+                
+                // 变形逻辑
+                pos *= uScale; 
+                float dist = length(pos.xz);
+                if(dist > 0.1) {
+                    pos.x += (pos.x / dist) * uSpread * 5.0;
+                    pos.z += (pos.z / dist) * uSpread * 5.0;
+                }
+
+                // 漂浮动画
+                if (isRibbon) {
+                    pos.y += sin(uTime * 1.0 + pos.x * 0.8) * 0.15; // 珍珠链条更稳重
+                } else {
+                    pos.y += sin(uTime * 1.5 + aRandom * 10.0) * 0.15;
+                }
+
+                vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                gl_Position = projectionMatrix * mvPosition;
+                
+                // --- 风格化逻辑 ---
+                float sizeMult = 1.0;
+                vColor = vec3(1.0); 
+                vAlpha = 1.0;
+
+                if (isLight) {
+                    // 六芒星：缓慢旋转感（通过透明度模拟），柔和闪烁
+                    sizeMult = 1.2; 
+                    float blink = sin(uTime * 2.0 + aRandom * 50.0);
+                    vAlpha = 0.5 + 0.5 * smoothstep(-0.5, 0.5, blink);
+                    vColor = uDecorColor;
+
+                } else if (isBauble) {
+                    // 宝石：锐利的闪光切割感 (Spiky sine wave)
+                    sizeMult = 2.0; 
+                    float shimmer = sin(uTime * 5.0 + aRandom * 100.0);
+                    // 只有当 shimmer > 0.8 时才特别亮，模拟反光
+                    float flash = smoothstep(0.8, 1.0, shimmer) * 0.5; 
+                    vAlpha = 0.8 + flash; 
+                    vColor = mix(uDecorColor, vec3(1.0), flash); // 闪光时变白
+
+                } else if (isRibbon) {
+                    // 珍珠：大小均匀，不闪烁，展现温润光泽
+                    sizeMult = 1.2;
+                    vAlpha = 0.9;
+                    vColor = uDecorColor; // 珍珠白
+
+                } else {
+                    // 雪松：微光
+                    vAlpha = 0.5 + 0.5 * sin(uTime * 1.5 + aRandom * 20.0);
+                }
+
+                // 距离衰减
+                gl_PointSize = uSize * sizeMult * (1.0 + uSpread*0.4) * (20.0 / -mvPosition.z);
+            }
+        `;
+
+        const commonFragmentShader = `
+            uniform vec3 uColor;
+            uniform sampler2D uTexture;
+            varying float vAlpha;
+            varying vec3 vColor;
+            
+            void main() {
+                vec4 texColor = texture2D(uTexture, gl_PointCoord);
+                if (texColor.a < 0.1) discard;
+                
+                // 颜色混合逻辑
+                vec3 finalColor = uColor;
+                // 如果是装饰物（vColor不接近白色），优先用装饰色
+                if (vColor.r < 0.98 || vColor.g < 0.98 || vColor.b < 0.98) {
+                      finalColor = vColor; 
+                }
+
+                gl_FragColor = vec4(finalColor, 1.0) * texColor;
+                gl_FragColor.a *= vAlpha;
+            }
+        `;
+
+        // --- 4. 构建系统 ---
+        const treeHeight = 25;
+        const treeRadius = 9;
+        
+        // 默认配色更新：雪松绿、珍珠白
+        const sharedUniforms = {
+            uTime: { value: 0 }, uScale: { value: 1.0 }, uSpread: { value: 0.0 }, uSize: { value: 30.0 },
+            uTexture: { value: textures['dust'] }, 
+            uColor: { value: new THREE.Color('#0f2e1c') }, // [新] 雪松深绿
+            isLight: { value: false }, isBauble: { value: false }, isRibbon: { value: false },
+            uDecorColor: { value: new THREE.Color('#ffffff') }
+        };
+
+        function createMat(type, textureKey, colorHex) {
+            const uniforms = THREE.UniformsUtils.clone(sharedUniforms);
+            uniforms[type].value = true;
+            uniforms.uTexture.value = textures[textureKey];
+            uniforms.uDecorColor.value.set(colorHex);
+            return new THREE.ShaderMaterial({
+                uniforms: uniforms, vertexShader: commonVertexShader, fragmentShader: commonFragmentShader,
+                transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+            });
+        }
+
+        // A. 雪松树体 (更加细密)
+        const treeGeo = new THREE.BufferGeometry();
+        {
+            const pos = [], rnd = [];
+            for (let i = 0; i < 4000; i++) { // 增加粒子数
+                const y = Math.random() * treeHeight;
+                // 雪松形状稍微修长一点
+                const r = Math.pow((treeHeight - y) / treeHeight, 0.9) * treeRadius * Math.sqrt(Math.random());
+                const angle = y * 2.5 + Math.random() * Math.PI * 2;
+                pos.push(Math.cos(angle)*r, y - treeHeight/2, Math.sin(angle)*r);
+                rnd.push(Math.random());
+            }
+            treeGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            treeGeo.setAttribute('aRandom', new THREE.Float32BufferAttribute(rnd, 1));
+        }
+        const treeMat = new THREE.ShaderMaterial({
+            uniforms: THREE.UniformsUtils.clone(sharedUniforms), vertexShader: commonVertexShader, fragmentShader: commonFragmentShader,
+            transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+        });
+        scene.add(new THREE.Points(treeGeo, treeMat));
+
+        // B. 漂浮六芒星 (Lights)
+        const lightGeo = new THREE.BufferGeometry();
+        {
+            const pos = [], rnd = [];
+            for (let i = 0; i < 200; i++) {
+                const y = Math.random() * treeHeight;
+                const r = ((treeHeight - y) / treeHeight * treeRadius) + 0.5; // 漂浮在表面之外
+                const angle = y * 4.0 + Math.random() * Math.PI * 2;
+                pos.push(Math.cos(angle)*r, y - treeHeight/2, Math.sin(angle)*r);
+                rnd.push(Math.random());
+            }
+            lightGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            lightGeo.setAttribute('aRandom', new THREE.Float32BufferAttribute(rnd, 1));
+        }
+        // 使用 'hexagram' 纹理，颜色为冷金/星光色
+        const lightMat = createMat('isLight', 'hexagram', '#fff8e1'); 
+        const lightSystem = new THREE.Points(lightGeo, lightMat);
+        scene.add(lightSystem);
+
+        // C. 宝石挂坠 (Baubles)
+        const baubleGeo = new THREE.BufferGeometry();
+        {
+            const pos = [], rnd = [];
+            for (let i = 0; i < 150; i++) {
+                const y = Math.random() * treeHeight * 0.9;
+                const r = ((treeHeight - y) / treeHeight * treeRadius) * 0.85; // 嵌在树枝里
+                const angle = Math.random() * Math.PI * 2;
+                pos.push(Math.cos(angle)*r, y - treeHeight/2, Math.sin(angle)*r);
+                rnd.push(Math.random());
+            }
+            baubleGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            baubleGeo.setAttribute('aRandom', new THREE.Float32BufferAttribute(rnd, 1));
+        }
+        // 使用 'diamond' 纹理，红宝石色
+        const baubleMat = createMat('isBauble', 'diamond', '#ff0044'); 
+        const baubleSystem = new THREE.Points(baubleGeo, baubleMat);
+        scene.add(baubleSystem);
+
+        // D. 珍珠项链 (Ribbons)
+        const ribbonGeo = new THREE.BufferGeometry();
+        {
+            const pos = [], rnd = [];
+            const ribbonCount = 4; 
+            const pointsPerRibbon = 200;
+            for(let r=0; r<ribbonCount; r++) {
+                const startAngle = (r / ribbonCount) * Math.PI * 2;
+                for (let i = 0; i < pointsPerRibbon; i++) {
+                    const progress = i / pointsPerRibbon; 
+                    const y = treeHeight * (1.0 - progress); 
+                    const radius = (treeHeight - y) / treeHeight * treeRadius + 0.2; 
+                    const angle = startAngle + progress * Math.PI * 6.0; 
+                    
+                    pos.push(Math.cos(angle)*radius, y - treeHeight/2, Math.sin(angle)*radius);
+                    rnd.push(progress); 
+                }
+            }
+            ribbonGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            ribbonGeo.setAttribute('aRandom', new THREE.Float32BufferAttribute(rnd, 1));
+        }
+        // 使用 'pearl' 纹理，纯净的奶油白
+        const ribbonMat = createMat('isRibbon', 'pearl', '#fffdd0');
+        const ribbonSystem = new THREE.Points(ribbonGeo, ribbonMat);
+        scene.add(ribbonSystem);
+
+
+        // E. 树顶大六芒星
+        const topperGeo = new THREE.BufferGeometry();
+        {
+            const pos = []; const rMax = 1.8;
+            for (let i = 0; i < 100; i++) {
+                const u=Math.random(), v=Math.random();
+                const theta=2*Math.PI*u, phi=Math.acos(2*v-1), r=rMax*Math.sqrt(Math.random());
+                pos.push(r*Math.sin(phi)*Math.cos(theta), r*Math.sin(phi)*Math.sin(theta), r*Math.cos(phi));
+            }
+            topperGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        }
+        const topStar = new THREE.Points(topperGeo, new THREE.PointsMaterial({
+            color: 0xffffff, size: 2.0, map: textures['hexagram'], blending: THREE.AdditiveBlending, depthWrite: false, transparent: true
+        }));
+        scene.add(topStar);
+
+        // F. 仙子奇幻尘埃 (替代原本的雪花)
+        const dustGeo = new THREE.BufferGeometry();
+        {
+            const pos = [];
+            for(let i=0; i<1500; i++) pos.push((Math.random()-0.5)*50, (Math.random()-0.5)*50, (Math.random()-0.5)*50);
+            dustGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        }
+        const dustSystem = new THREE.Points(dustGeo, new THREE.PointsMaterial({
+            color: 0xccffff, size: 0.6, map: textures['dust'], transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false
+        }));
+        scene.add(dustSystem);
+
+        // --- 5. UI 控制面板 ---
+        const gui = new GUI({ title: '✨ 奇幻森林控制台' });
+        
+        const fTree = gui.addFolder('🌲 雪松本体');
+        const treeParams = { color: '#0f2e1c', size: 30 };
+        fTree.addColor(treeParams, 'color').name('雪松颜色').onChange(v => treeMat.uniforms.uColor.value.set(v));
+        fTree.add(treeParams, 'size', 10, 80).name('粒子浓度').onChange(v => {
+            treeMat.uniforms.uSize.value = v; lightMat.uniforms.uSize.value = v;
+            baubleMat.uniforms.uSize.value = v; ribbonMat.uniforms.uSize.value = v;
+        });
+        
+        const fDecor = gui.addFolder('💎 魔法饰品');
+        
+        const decorParams = { 
+            lights: true, lightCol: '#fff8e1',
+            baubles: true, baubleCol: '#ff0044',
+            ribbons: true, ribbonCol: '#fffdd0',
+            star: true, starCol: '#ffffff'
+        };
+        fDecor.add(decorParams, 'lights').name('漂浮六芒星').onChange(v => lightSystem.visible = v);
+        fDecor.addColor(decorParams, 'lightCol').name('星光颜色').onChange(v => lightMat.uniforms.uDecorColor.value.set(v));
+        
+        fDecor.add(decorParams, 'baubles').name('切割宝石').onChange(v => baubleSystem.visible = v);
+        fDecor.addColor(decorParams, 'baubleCol').name('宝石颜色').onChange(v => baubleMat.uniforms.uDecorColor.value.set(v));
+        
+        fDecor.add(decorParams, 'ribbons').name('珍珠项链').onChange(v => ribbonSystem.visible = v);
+        fDecor.addColor(decorParams, 'ribbonCol').name('珍珠光泽').onChange(v => ribbonMat.uniforms.uDecorColor.value.set(v));
+
+        fDecor.add(decorParams, 'star').name('树顶法阵').onChange(v => topStar.visible = v);
+        fDecor.addColor(decorParams, 'starCol').name('法阵光辉').onChange(v => topStar.material.color.set(v));
+
+        const fEnv = gui.addFolder('✨ 环境魔法');
+        const envParams = { showDust: true, dustSpeed: 0.05 };
+        fEnv.add(envParams, 'showDust').name('仙子尘埃').onChange(v => dustSystem.visible = v);
+        fEnv.add(envParams, 'dustSpeed', 0.0, 0.3).name('飘散速度');
+
+        // --- 6. 交互与动画 ---
+        let targetScale = 1.0; let targetSpread = 0.0;
+        const videoElement = document.getElementById('input_video');
+        
+        function onResults(results) {
+            document.getElementById('loading').style.display = 'none';
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const lm = results.multiHandLandmarks[0];
+                const d = Math.sqrt(Math.pow(lm[4].x - lm[20].x, 2) + Math.pow(lm[4].y - lm[20].y, 2));
+                const openness = Math.max(0, Math.min(1, (d - 0.1) / 0.3));
+                targetScale = 0.8 + (openness * 0.8); targetSpread = openness * 1.5;
+            } else { targetScale = 1.0; targetSpread = 0.0; }
+        }
+
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onResults);
+        
+        const cameraUtils = new Camera(videoElement, { onFrame: async () => await hands.send({image: videoElement}), width: 320, height: 240 });
+        cameraUtils.start();
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta(); const time = clock.getElapsedTime();
+
+            const currentScale = treeMat.uniforms.uScale.value + (targetScale - treeMat.uniforms.uScale.value) * 0.1;
+            const currentSpread = treeMat.uniforms.uSpread.value + (targetSpread - treeMat.uniforms.uSpread.value) * 0.1;
+
+            [treeMat, lightMat, baubleMat, ribbonMat].forEach(mat => {
+                mat.uniforms.uTime.value = time;
+                mat.uniforms.uScale.value = currentScale;
+                mat.uniforms.uSpread.value = currentSpread;
+            });
+
+            topStar.position.y = (treeHeight/2) * currentScale + (currentSpread * 2.0);
+            topStar.rotation.y = time * 0.5;
+            topStar.rotation.z = Math.sin(time * 0.5) * 0.2; // 树顶增加一点摆动
+            
+            ribbonSystem.rotation.y = time * 0.05; // 珍珠项链转得慢一点
+
+            // 仙子尘埃动画 (保留了之前修复的随机速度逻辑)
+            if(dustSystem.visible) {
+                const positions = dustGeo.attributes.position.array;
+                for(let i=1; i<positions.length; i+=3) {
+                    const randomSpeed = 1.0 + Math.sin(positions[i-1]) * 0.5; 
+                    // 尘埃不仅向下，还带一点点旋转浮动
+                    positions[i] -= envParams.dustSpeed * 20 * dt * randomSpeed; 
+                    
+                    if (positions[i] < -25) {
+                        positions[i] = 25 + Math.random() * 10;
+                    }
+                }
+                dustGeo.attributes.position.needsUpdate = true;
+                dustSystem.rotation.y = time * 0.02;
+            }
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        document.getElementById('fs-btn').addEventListener('click', () => {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+            else if (document.exitFullscreen) document.exitFullscreen();
+        });
+
+        animate();
+    </script>
+</body>
+</html>
